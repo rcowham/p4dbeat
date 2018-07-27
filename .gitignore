@@ -1,0 +1,7 @@
+/.idea
+/build
+
+.DS_Store
+/p4dbeat
+/p4dbeat.test
+*.pyc

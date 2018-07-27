@@ -1,0 +1,9 @@
+- key: p4dbeat
+  title: p4dbeat
+  description:
+  fields:
+    - name: counter
+      type: long
+      required: true
+      description: >
+        PLEASE UPDATE DOCUMENTATION
