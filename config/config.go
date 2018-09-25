@@ -5,10 +5,14 @@ package config
 
 import "time"
 
+// Config - P4dbeat config
 type Config struct {
 	Period time.Duration `config:"period"`
+	Path   string        `config:"path"`
 }
 
+// DefaultConfig - default values for P4dbeat
 var DefaultConfig = Config{
 	Period: 1 * time.Second,
+	Path:   "/p4/1/logs/log",
 }

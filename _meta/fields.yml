@@ -7,3 +7,10 @@
       required: true
       description: >
         PLEASE UPDATE DOCUMENTATION
+
+    - name: cmd
+      type: string
+      required: true
+      description: >
+        Perforce command executed, e.g. user-add or user-sync.
+        Some commands are not prefixed by user-.
