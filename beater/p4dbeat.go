@@ -2,7 +2,6 @@ package beater
 
 import (
 	"fmt"
-	"psla/p4dlogparse"
 	"time"
 
 	"github.com/elastic/beats/libbeat/beat"
@@ -10,14 +9,18 @@ import (
 	"github.com/elastic/beats/libbeat/logp"
 
 	"github.com/hpcloud/tail"
+	p4dlog "github.com/rcowham/go-libp4dlog"
 	"github.com/rcowham/p4dbeat/config"
 )
 
 // P4dbeat configuration.
 type P4dbeat struct {
-	done   chan struct{}
-	config config.Config
-	client beat.Client
+	done    chan struct{}
+	name    string
+	config  config.Config
+	client  beat.Client
+	inchan  chan []byte
+	outchan chan string
 }
 
 // New creates an instance of p4dbeat.
@@ -28,8 +31,11 @@ func New(b *beat.Beat, cfg *common.Config) (beat.Beater, error) {
 	}
 
 	bt := &P4dbeat{
-		done:   make(chan struct{}),
-		config: c,
+		done:    make(chan struct{}),
+		inchan:  make(chan []byte, 100),
+		outchan: make(chan string, 100),
+		name:    b.Info.Name,
+		config:  c,
 	}
 
 	return bt, nil
@@ -44,6 +50,8 @@ func (bt *P4dbeat) Run(b *beat.Beat) error {
 	if err != nil {
 		return err
 	}
+
+	logp.Debug("Processing log file: %s\n", bt.config.Path)
 
 	tailFileDone := make(chan struct{})
 	tailFileconfig := tail.Config{
@@ -70,26 +78,23 @@ func (bt *P4dbeat) Run(b *beat.Beat) error {
 // 	case <-ticker.C:
 // 	}
 
-type parseResult struct {
-	bt       *P4dbeat
-	callback p4dlogparse.P4dOutputCallback
-}
-
-func newResult(bt *P4dbeat) *parseResult {
-	var pr parseResult
-	pr.bt = bt
-	pr.callback = func(output string) {
-		event := beat.Event{
-			Timestamp: time.Now(),
-			Fields: common.MapStr{
-				"type": bt.Info.Name,
-				"cmd":  output,
-			},
+func (bt *P4dbeat) processEvents() {
+	for {
+		select {
+		case line := <-bt.outchan:
+			event := beat.Event{
+				Timestamp: time.Now(),
+				Fields: common.MapStr{
+					"type": bt.name,
+					"cmd":  line,
+				},
+			}
+			bt.client.Publish(event)
+			logp.Info("Event sent")
+		default:
+			return
 		}
-		bt.client.Publish(event)
-		logp.Info("Event sent")
 	}
-	return &pr
 }
 
 func (bt *P4dbeat) tailFile(filename string, config tail.Config, done chan struct{}, stop chan struct{}) {
@@ -103,63 +108,31 @@ func (bt *P4dbeat) tailFile(filename string, config tail.Config, done chan struc
 		return
 	}
 
-	presult := newResult(bt)
+	fp := p4dlog.NewP4dFileParser(bt.inchan, bt.outchan)
+	go fp.LogParser()
 
 	for line := range t.Lines {
 		select {
 		case <-stop:
+			logp.Debug("Stopping\n", "")
+			close(bt.inchan)
+			bt.processEvents()
 			t.Stop()
 			return
 		default:
+			//logp.Debug("NOT Stopping\n", "")
 		}
 
-		// event := make(common.MapStr)
-		// if err = json.Unmarshal([]byte(line.Text), &event); err != nil {
-		// 	logp.Err("Unmarshal json log failed, err: %v", err)
-		// 	continue
-		// }
-		// if logTime, err := time.Parse("2017-03-13T07:13:30.172Z", event["@timestamp"].(string)); err != nil {
-		// 	event["@timestamp"] = common.Time(logTime)
-		// } else {
-		// 	logp.Err("Unmarshal json log @timestamp failed, time string: %v", event["@timestamp"].(string))
-		// 	event["@timestamp"] = common.Time(time.Now())
-		// }
-		// bt.client.PublishEvent(event)
-		// logp.Info("Event sent")
+		logp.Debug("Parsing line: %s\n", line.Text)
+		buf := []byte(line.Text)
+		bt.inchan <- buf
+		bt.processEvents()
 	}
 
 	if err = t.Wait(); err != nil {
 		logp.Err("Tail file blocking goroutine stopped, err: %v", err)
 	}
 }
-
-// 		// P4LogParseFile - interface for parsing a specified file
-// func (fp *P4dFileParser) P4LogParseFile(opts P4dParseOptions) {
-// 	var scanner *bufio.Scanner
-// 	if len(opts.testInput) > 0 {
-// 		scanner = bufio.NewScanner(strings.NewReader(opts.testInput))
-// 	} else if opts.File == "-" {
-// 		scanner = bufio.NewScanner(os.Stdin)
-// 	} else {
-// 		file, err := os.Open(opts.File)
-// 		if err != nil {
-// 			log.Fatal(err)
-// 		}
-// 		defer file.Close()
-// 		reader := bufio.NewReaderSize(file, 1024*1024) // Read in chunks
-// 		scanner = bufio.NewScanner(reader)
-// 	}
-// 	fp.lineNo = 0
-// 	for scanner.Scan() {
-// 		line := scanner.Bytes()
-// 		fp.P4LogParseLine(line)
-// 	}
-// 	fp.P4LogParseFinish()
-// 	if err := scanner.Err(); err != nil {
-// 		fmt.Fprintf(os.Stderr, "reading file %s:%s\n", opts.File, err)
-// 	}
-
-// }
 
 // Stop stops p4dbeat.
 func (bt *P4dbeat) Stop() {

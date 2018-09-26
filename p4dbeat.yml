@@ -5,6 +5,8 @@
 p4dbeat:
   # Defines how often an event is sent to the output
   period: 1s
+  path: /tmp/dvcs/.p4root/p4_log.txt
+  
 
 #================================ General =====================================
 
