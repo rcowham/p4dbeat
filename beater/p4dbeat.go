@@ -81,12 +81,13 @@ func (bt *P4dbeat) Run(b *beat.Beat) error {
 func (bt *P4dbeat) processEvents() {
 	for {
 		select {
-		case line := <-bt.outchan:
+		case json := <-bt.outchan:
+			logp.Debug("Event sending", "")
 			event := beat.Event{
 				Timestamp: time.Now(),
 				Fields: common.MapStr{
 					"type": bt.name,
-					"cmd":  line,
+					"cmd":  json,
 				},
 			}
 			bt.client.Publish(event)
@@ -111,7 +112,7 @@ func (bt *P4dbeat) tailFile(filename string, config tail.Config, done chan struc
 	fp := p4dlog.NewP4dFileParser(bt.inchan, bt.outchan)
 	go fp.LogParser()
 
-	for line := range t.Lines {
+	for {
 		select {
 		case <-stop:
 			logp.Debug("Stopping\n", "")
@@ -119,19 +120,28 @@ func (bt *P4dbeat) tailFile(filename string, config tail.Config, done chan struc
 			bt.processEvents()
 			t.Stop()
 			return
+		case line := <-t.Lines:
+			logp.Debug("Parsing line:\n%s", line.Text)
+			buf := []byte(line.Text)
+			bt.inchan <- buf
+		case json := <-bt.outchan:
+			logp.Debug("Event sending", "")
+			event := beat.Event{
+				Timestamp: time.Now(),
+				Fields: common.MapStr{
+					"type": bt.name,
+					"cmd":  json,
+				},
+			}
+			bt.client.Publish(event)
+			logp.Info("Event sent")
 		default:
-			//logp.Debug("NOT Stopping\n", "")
 		}
-
-		logp.Debug("Parsing line: %s\n", line.Text)
-		buf := []byte(line.Text)
-		bt.inchan <- buf
-		bt.processEvents()
 	}
 
-	if err = t.Wait(); err != nil {
-		logp.Err("Tail file blocking goroutine stopped, err: %v", err)
-	}
+	// if err = t.Wait(); err != nil {
+	// 	logp.Err("Tail file blocking goroutine stopped, err: %v", err)
+	// }
 }
 
 // Stop stops p4dbeat.
