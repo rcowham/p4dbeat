@@ -1,6 +1,7 @@
 package beater
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -15,12 +16,12 @@ import (
 
 // P4dbeat configuration.
 type P4dbeat struct {
-	done    chan struct{}
-	name    string
-	config  config.Config
-	client  beat.Client
-	inchan  chan []byte
-	outchan chan string
+	done   chan struct{}
+	name   string
+	config config.Config
+	client beat.Client
+	lines  chan []byte
+	events chan string
 }
 
 // New creates an instance of p4dbeat.
@@ -31,11 +32,11 @@ func New(b *beat.Beat, cfg *common.Config) (beat.Beater, error) {
 	}
 
 	bt := &P4dbeat{
-		done:    make(chan struct{}),
-		inchan:  make(chan []byte, 100),
-		outchan: make(chan string, 100),
-		name:    b.Info.Name,
-		config:  c,
+		done:   make(chan struct{}),
+		lines:  make(chan []byte, 100),
+		events: make(chan string, 100),
+		name:   b.Info.Name,
+		config: c,
 	}
 
 	return bt, nil
@@ -78,20 +79,36 @@ func (bt *P4dbeat) Run(b *beat.Beat) error {
 // 	case <-ticker.C:
 // 	}
 
+func (bt *P4dbeat) publishEvent(str string) {
+	var f interface{}
+	err := json.Unmarshal([]byte(str), &f)
+	if err != nil {
+		logp.Warn("Error %v to unmarshal %s", err, str)
+	}
+	m := f.(map[string]interface{})
+	event := beat.Event{
+		Timestamp: time.Now(),
+		Fields: common.MapStr{
+			"type":             bt.name,
+			"p4.cmd":           m["cmd"],
+			"p4.user":          m["user"],
+			"p4.workspace":     m["workspace"],
+			"p4.ip":            m["ip"],
+			"p4.args":          m["args"],
+			"p4.start_time":    m["startTime"],
+			"p4.end_time":      m["endTime"],
+			"p4.compute_sec":   m["computeLapse"],
+			"p4.completed_sec": m["completedLapse"],
+		},
+	}
+	bt.client.Publish(event)
+}
+
 func (bt *P4dbeat) processEvents() {
 	for {
 		select {
-		case json := <-bt.outchan:
-			logp.Debug("Event sending", "")
-			event := beat.Event{
-				Timestamp: time.Now(),
-				Fields: common.MapStr{
-					"type": bt.name,
-					"cmd":  json,
-				},
-			}
-			bt.client.Publish(event)
-			logp.Info("Event sent")
+		case json := <-bt.events:
+			bt.publishEvent(json)
 		default:
 			return
 		}
@@ -109,33 +126,24 @@ func (bt *P4dbeat) tailFile(filename string, config tail.Config, done chan struc
 		return
 	}
 
-	fp := p4dlog.NewP4dFileParser(bt.inchan, bt.outchan)
-	go fp.LogParser()
+	fp := p4dlog.NewP4dFileParser()
+	go fp.LogParser(bt.lines, bt.events)
 
 	for {
 		select {
 		case <-stop:
 			logp.Debug("Stopping\n", "")
-			close(bt.inchan)
+			close(bt.lines)
 			bt.processEvents()
 			t.Stop()
 			return
 		case line := <-t.Lines:
 			logp.Debug("Parsing line:\n%s", line.Text)
 			buf := []byte(line.Text)
-			bt.inchan <- buf
-		case json := <-bt.outchan:
-			logp.Debug("Event sending", "")
-			event := beat.Event{
-				Timestamp: time.Now(),
-				Fields: common.MapStr{
-					"type": bt.name,
-					"cmd":  json,
-				},
-			}
-			bt.client.Publish(event)
-			logp.Info("Event sent")
-		default:
+			bt.lines <- buf
+		case json := <-bt.events:
+			bt.publishEvent(json)
+			// default:
 		}
 	}
 

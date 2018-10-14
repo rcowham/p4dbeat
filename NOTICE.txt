@@ -1,5 +1,5 @@
 p4dbeat
-Copyright 2017 Robert Cowham
+Copyright 2018 Perforce Software
 
 This product includes software developed by The Apache Software
 Foundation (http://www.apache.org/).

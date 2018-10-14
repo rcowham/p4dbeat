@@ -1,16 +1,89 @@
 - key: p4dbeat
   title: p4dbeat
-  description:
+  description: >
+    Perforce server log analysis fields.
+
   fields:
-    - name: counter
+    - name: p4.cmd
+      type: string
+      required: true
+      example: user-sync
+      description: >
+        Perforce command executed. Most are prefixed by "user-".
+
+    - name: p4.pid
+      type: integer
+      required: true
+      description: >
+        PID (process id) for Perforce command - as per "p4 monitor" output.
+        On Windows this is thread id.
+
+    - name: p4.line_no
       type: long
       required: true
       description: >
-        PLEASE UPDATE DOCUMENTATION
+        Line number within log file (approximate if restarted).
 
-    - name: cmd
+    - name: p4.user
       type: string
       required: true
       description: >
-        Perforce command executed, e.g. user-add or user-sync.
-        Some commands are not prefixed by user-.
+        Perforce User ID which executed the command (P4USER).
+
+    - name: p4.workspace
+      type: string
+      required: false
+      description: >
+        Perforce client workspace valid when command was run (P4CLIENT).
+        Some reporting commands do not have an entry.
+
+    - name: p4.ip
+      type: string
+      required: true
+      description: >
+        IP address of client machine where command was run.
+
+    - name: p4.app
+      type: string
+      required: true
+      example: P4/DARWIN90X86_64/2018.1/1660568
+      description: >
+        Version string which identifies Perforce client application.
+        Includes all released applications such as p4/P4V as well as
+        P4API tools including P4Python/P4Perl/P4Ruby/P4Java/P4.Net
+        Useful for identifying older installed clients which might be
+        best updated.
+
+    - name: p4.args
+      type: text
+      required: true
+      example: -s submitted
+      description: >
+        Arguments to 'cmd' as executed by the user (via p4/P4V etc).
+        This is truncated for clients such as Swarm or GitFusion
+        which generate a lot of JSON values.
+
+    - name: p4.start_time
+      type: date
+      required: false
+      description: >
+        Time when cmd was initiated.
+
+    - name: p4.end_time
+      type: date
+      required: false
+      description: >
+        Time when cmd was completed (if it did).
+
+    - name: p4.compute_sec
+      type: float
+      required: false
+      description: >
+        Elapsed time for compute phase in seconds - if zero then command does not have
+        a compute phase.
+
+    - name: completed_sec
+      type: float
+      required: false
+      description: >
+        Elapsed time for a completed command in seconds.

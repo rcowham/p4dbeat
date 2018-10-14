@@ -5,7 +5,9 @@
 p4dbeat:
   # Defines how often an event is sent to the output
   period: 1s
-  path: /tmp/dvcs/.p4root/p4_log.txt
+  # Path to p4d log file to tail
+  # path: /tmp/dvcs/.p4root/p4_log.txt
+  path: c:/p4training/logs/log.txt
   
 
 #================================ General =====================================
@@ -68,7 +70,8 @@ setup.kibana:
 #-------------------------- Elasticsearch output ------------------------------
 output.elasticsearch:
   # Array of hosts to connect to.
-  hosts: ["localhost:9200"]
+  # hosts: ["localhost:9200"]
+  hosts: ["192.168.86.235:9200"]
 
   # Optional protocol and basic auth credentials.
   #protocol: "https"
