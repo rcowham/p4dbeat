@@ -26,44 +26,48 @@ import (
 	"github.com/magefile/mage/mg"
 	"github.com/magefile/mage/sh"
 
-	"github.com/elastic/beats/dev-tools/mage"
+	devtools "github.com/elastic/beats/v7/dev-tools/mage"
 )
 
 func init() {
-	mage.SetBuildVariableSources(mage.DefaultBeatBuildVariableSources)
+	devtools.SetBuildVariableSources(devtools.DefaultBeatBuildVariableSources)
 
-	mage.BeatDescription = "One sentence description of the Beat."
+	devtools.BeatDescription = "Perforce log parser"
+	devtools.BeatDescription = "Send structured p4d log commands and events to elastic."
+	devtools.BeatVendor = "Firstname Lastname"
+	devtools.BeatProjectType = devtools.CommunityProject
+	devtools.CrossBuildMountModcache = true
 }
 
 // Build builds the Beat binary.
 func Build() error {
-	return mage.Build(mage.DefaultBuildArgs())
+	return devtools.Build(devtools.DefaultBuildArgs())
 }
 
 // GolangCrossBuild build the Beat binary inside of the golang-builder.
 // Do not use directly, use crossBuild instead.
 func GolangCrossBuild() error {
-	return mage.GolangCrossBuild(mage.DefaultGolangCrossBuildArgs())
+	return devtools.GolangCrossBuild(devtools.DefaultGolangCrossBuildArgs())
 }
 
 // BuildGoDaemon builds the go-daemon binary (use crossBuildGoDaemon).
 func BuildGoDaemon() error {
-	return mage.BuildGoDaemon()
+	return devtools.BuildGoDaemon()
 }
 
 // CrossBuild cross-builds the beat for all target platforms.
 func CrossBuild() error {
-	return mage.CrossBuild()
+	return devtools.CrossBuild()
 }
 
 // CrossBuildGoDaemon cross-builds the go-daemon binary using Docker.
 func CrossBuildGoDaemon() error {
-	return mage.CrossBuildGoDaemon()
+	return devtools.CrossBuildGoDaemon()
 }
 
 // Clean cleans all generated files and build artifacts.
 func Clean() error {
-	return mage.Clean()
+	return devtools.Clean()
 }
 
 // Package packages the Beat for distribution.
@@ -73,16 +77,16 @@ func Package() {
 	start := time.Now()
 	defer func() { fmt.Println("package ran for", time.Since(start)) }()
 
-	mage.UseCommunityBeatPackaging()
+	devtools.UseCommunityBeatPackaging()
 
 	mg.Deps(Update)
 	mg.Deps(CrossBuild, CrossBuildGoDaemon)
-	mg.SerialDeps(mage.Package, TestPackages)
+	mg.SerialDeps(devtools.Package, TestPackages)
 }
 
 // TestPackages tests the generated packages (i.e. file modes, owners, groups).
 func TestPackages() error {
-	return mage.TestPackages()
+	return devtools.TestPackages()
 }
 
 // Update updates the generated files (aka make update).
@@ -92,5 +96,5 @@ func Update() error {
 
 // Fields generates a fields.yml for the Beat.
 func Fields() error {
-	return mage.GenerateFieldsYAML()
+	return devtools.GenerateFieldsYAML()
 }
