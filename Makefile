@@ -22,9 +22,9 @@ copy-vendor:
 
 
 
-.PHONY: linux-bin
-linux-bin:
-	$(MAKE) GOX_OS=linux GOX_OSARCH=linux/amd64 crosscompile
+#.PHONY: linux-bin
+#docker-bin:
+#	$(MAKE) GOX_OS=linux GOX_OSARCH=linux/amd64 crosscompile
 
-image: linux-bin
+image:
 	docker build -f Dockerfile -t seanhoughton/p4dbeat:$(DOCKER_TAG) .

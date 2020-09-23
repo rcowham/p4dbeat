@@ -136,8 +136,8 @@ func (bt *P4dbeat) publishCommand(command p4dlog.Command) {
 	}
 
 	// Only include the IPC/RPC info if it's non zero
-	setIfNonZero(&event, "p4.ipc.in", command.IpcIn)
-	setIfNonZero(&event, "p4.ipc.out", command.IpcOut)
+	setIfNonZero(&event, "ipc.in", command.IpcIn)
+	setIfNonZero(&event, "ipc.out", command.IpcOut)
 	setIfNonZero(&event, "rpc.msgs.in", command.RPCMsgsIn)
 	setIfNonZero(&event, "rpc.msgs.out", command.RPCMsgsOut)
 	setIfNonZero(&event, "rpc.size.in", command.RPCSizeIn)
@@ -148,11 +148,11 @@ func (bt *P4dbeat) publishCommand(command p4dlog.Command) {
 	setIfNonZeroSec(&event, "rpc.rcv_sec", command.RPCRcv)
 
 	ips := strings.Split(command.IP, "/")
-	if ips[0] != "" && ips[0] != "background" {
+	if len(ips) == 1 && ips[0] != "background" {
 		event.Fields["p4.ip"] = ips[0]
-	}
-	if len(ips) > 1 {
-		event.Fields["p4.proxy_ip"] = ips[1]
+	} else if len(ips) > 1 {
+		event.Fields["p4.proxy_ip"] = ips[0]
+		event.Fields["p4.ip"] = ips[1]
 	}
 
 	for _, values := range command.Tables {
