@@ -12,6 +12,5 @@ var Name = "p4dbeat"
 
 // RootCmd to handle beats cli
 var RootCmd = cmd.GenRootCmdWithSettings(beater.New, instance.Settings{
-	Name:        Name,
-	IndexPrefix: "p4d",
+	Name: Name,
 })
