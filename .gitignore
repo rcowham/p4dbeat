@@ -5,3 +5,5 @@
 /p4dbeat
 /p4dbeat.test
 *.pyc
+.vscode/
+logs/
