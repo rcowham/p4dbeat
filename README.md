@@ -9,7 +9,7 @@ Ensure that this folder is at the following location:
 
 ### Requirements
 
-* [Golang](https://golang.org/dl/) 1.7
+* [Golang](https://golang.org/dl/) 1.14
 
 ### Init Project
 To get running with P4dbeat and also install the
@@ -36,7 +36,7 @@ To build the binary for P4dbeat run the command below. This will generate a bina
 in the same directory with the name p4dbeat.
 
 ```
-make
+make ES_BEATS=$GOPATH/pkg/mod/github.com/elastic/beats/v7@v7.9.1 p4dbeat
 ```
 
 
