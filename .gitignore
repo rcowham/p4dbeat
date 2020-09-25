@@ -1,9 +1,14 @@
 /.idea
 /build
-
 .DS_Store
 /p4dbeat
 /p4dbeat.test
+/__debug_bin
+/data
 *.pyc
+<<<<<<< HEAD
 .vscode/
 logs/
+=======
+*.log
+>>>>>>> fc0bf02cefede0db8d197d0bc6239755c88e9f56

@@ -5,7 +5,7 @@
 
   fields:
     - name: p4.cmd
-      type: string
+      type: keyword
       required: true
       example: user-sync
       description: >
@@ -25,26 +25,32 @@
         Line number within log file (approximate if restarted).
 
     - name: p4.user
-      type: string
+      type: keyword
       required: true
       description: >
         Perforce User ID which executed the command (P4USER).
 
     - name: p4.workspace
-      type: string
+      type: text
       required: false
       description: >
         Perforce client workspace valid when command was run (P4CLIENT).
         Some reporting commands do not have an entry.
 
     - name: p4.ip
-      type: string
-      required: true
+      type: ip
+      required: false
       description: >
         IP address of client machine where command was run.
 
+    - name: p4.proxy_ip
+      type: ip
+      required: false
+      description: >
+        IP address of the p4proxy that made the request, empty otherwise
+
     - name: p4.app
-      type: string
+      type: keyword
       required: true
       example: P4/DARWIN90X86_64/2018.1/1660568
       description: >
@@ -82,8 +88,134 @@
         Elapsed time for compute phase in seconds - if zero then command does not have
         a compute phase.
 
-    - name: completed_sec
+    - name: p4.completed_sec
       type: float
       required: false
       description: >
         Elapsed time for a completed command in seconds.
+
+    - name: p4.process_key
+      type: keyword
+      required: false
+      description: >
+        Identifier for correlating multiple events on different servers
+
+    - name: p4.start_time
+      type: date
+      required: false
+      description: >
+        Time the command started
+
+    - name: p4.end_time
+      type: date
+      required: false
+      description: >
+        Time the command ended
+
+    - name: p4.running
+      type: integer
+      required: false
+      description: >
+        p4.running
+
+    - name: p4.cpu.user
+      type: integer
+      required: false
+      description: >
+        User CPU time
+
+    - name: p4.cpu.system
+      type: integer
+      required: false
+      description: >
+        System CPU time
+
+    - name: p4.disk.blocks_in
+      type: integer
+      required: false
+      description: >
+        The number of 512 byte blocks read
+
+    - name: p4.disk.blocks_out
+      type: integer
+      required: false
+      description: >
+        The number of 512 byte blocks written
+
+    - name: p4.ipc.in
+      type: integer
+      required: false
+      description: >
+        IPC messages received
+
+    - name: p4.ipc.out
+      type: integer
+      required: false
+      description: >
+        IPC messages transmitted
+
+    - name: p4.max_rss
+      type: integer
+      required: false
+      description: >
+        p4.maxrss
+
+    - name: p4.page_faults
+      type: integer
+      required: false
+      description: >
+        The number of page faults that were serviced by doing I/O
+
+    - name: p4.rpc.msgs.in
+      type: integer
+      required: false
+      description: >
+        Number of RPC messages transfered to the server
+
+    - name: p4.rpc.msgs.out
+      type: integer
+      required: false
+      description: >
+        Number of RPC messages transfered from the server
+
+    - name: p4.rpc.size.in
+      type: integer
+      required: false
+      description: >
+        The size of RPC messages transfered to the server
+
+    - name: p4.rpc.size.out
+      type: integer
+      required: false
+      description: >
+        The size of RPC messages transfered from the server
+
+    - name: p4.rpc.himark.fwd
+      type: integer
+      required: false
+      description: >
+        The send/receive window size used for the RPC messages
+
+    - name: p4.rpc.himark.rev
+      type: integer
+      required: false
+      description: >
+        The send/receive window size used for the RPC messages
+
+    - name: p4.rpc.snd_sec
+      type: float
+      required: false
+      description: >
+        Time spent sending RPC messages
+
+    - name: p4.rpc.rcv_sec
+      type: float
+      required: false
+      description: >
+        Time spent receiving RPC messages
+
+    - name: p4.cmd_error
+      type: boolean
+      required: false
+      description: >
+        Did the command experience an error
