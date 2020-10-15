@@ -4,12 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/elastic/beats/v7/libbeat/beat"
 	"github.com/elastic/beats/v7/libbeat/common"
 	"github.com/elastic/beats/v7/libbeat/logp"
+	"github.com/elastic/beats/v7/libbeat/paths"
+	"github.com/elastic/beats/v7/libbeat/statestore"
+	"github.com/elastic/beats/v7/libbeat/statestore/backend/memlog"
 	"github.com/sirupsen/logrus"
 
 	"github.com/hpcloud/tail"
@@ -17,14 +21,18 @@ import (
 	"github.com/rcowham/p4dbeat/config"
 )
 
+const offsetKeyName = "offset"
+
 // P4dbeat configuration.
 type P4dbeat struct {
-	done   chan struct{}
-	name   string
-	config config.Config
-	client beat.Client
-	lines  chan string
-	events chan string
+	done     chan struct{}
+	name     string
+	config   config.Config
+	client   beat.Client
+	lines    chan string
+	events   chan string
+	log      *logrus.Logger
+	registry *statestore.Registry
 }
 
 // New creates an instance of p4dbeat.
@@ -34,12 +42,29 @@ func New(b *beat.Beat, cfg *common.Config) (beat.Beater, error) {
 		return nil, fmt.Errorf("Error reading config file: %v", err)
 	}
 
+	log := logrus.New()
+
+	memlog, err := memlog.New(
+		logp.NewLogger("p4dbeat"),
+		memlog.Settings{
+			Root: paths.Resolve(paths.Data, c.StatePath),
+			Checkpoint: func(filesize uint64) bool {
+				const limit = 1024 * 256 // 256kb of transactions
+				return filesize >= limit
+			},
+		})
+	if err != nil {
+		return nil, err
+	}
+
 	bt := &P4dbeat{
-		done:   make(chan struct{}),
-		lines:  make(chan string, 100),
-		events: make(chan string, 100),
-		name:   b.Info.Name,
-		config: c,
+		done:     make(chan struct{}),
+		lines:    make(chan string, 100),
+		events:   make(chan string, 100),
+		name:     b.Info.Name,
+		config:   c,
+		log:      log,
+		registry: statestore.NewRegistry(memlog),
 	}
 
 	return bt, nil
@@ -49,7 +74,31 @@ func New(b *beat.Beat, cfg *common.Config) (beat.Beater, error) {
 func (bt *P4dbeat) Run(b *beat.Beat) error {
 	logp.Info("p4dbeat is running! Hit CTRL-C to stop it.")
 
-	var err error
+	store, err := bt.registry.Get("p4dbeat")
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+
+	// Load the stored offset from the state registry so
+	// we resume parsing the file where we left off.
+	// Note: if a rotation happens in between we will resume at
+	// the wrong place, we need to store the inode value to detect that
+	offsetData := common.MapStr{}
+	var offset int64
+	err = store.Get(offsetKeyName, &offsetData)
+	if err != nil {
+		bt.log.Warnf("No file offset state found, resuming from the start: %v", err)
+	} else if offsetData["offset"] != "" {
+		offsetVal, ok := offsetData["offset"].(float64) // all json values are float64
+		if !ok {
+			bt.log.Warnf("Invalid file offset: '%s': %v", offsetData["offset"], err)
+		} else {
+			offset = int64(offsetVal)
+			bt.log.Infof("Starting at offset %d bytes", offset)
+		}
+	}
+
 	bt.client, err = b.Publisher.Connect()
 	if err != nil {
 		return err
@@ -64,9 +113,13 @@ func (bt *P4dbeat) Run(b *beat.Beat) error {
 		Poll:        false,
 		Follow:      true,
 		MaxLineSize: 0,
+		Location: &tail.SeekInfo{
+			Offset: offset,
+			Whence: os.SEEK_SET,
+		},
 	}
 
-	go bt.tailFile(bt.config.Path, tailFileconfig, tailFileDone, bt.done)
+	go bt.tailFile(bt.config.Path, tailFileconfig, tailFileDone, bt.done, store)
 
 	<-tailFileDone
 
@@ -111,27 +164,27 @@ func (bt *P4dbeat) publishCommand(command p4dlog.Command) {
 	event := beat.Event{
 		Timestamp: time.Now(),
 		Fields: common.MapStr{
-			"type":              bt.name,
-			"p4.process_key":    command.ProcessKey,
-			"p4.cmd":            command.Cmd,
-			"p4.pid":            command.Pid,
-			"p4.line_no":        command.LineNo,
-			"p4.user":           command.User,
-			"p4.workspace":      command.Workspace,
-			"p4.start_time":     command.StartTime,
-			"p4.end_time":       command.EndTime,
-			"p4.compute_sec":    command.ComputeLapse,
-			"p4.completed_sec":  command.CompletedLapse,
-			"p4.app":            command.App,
-			"p4.args":           command.Args,
-			"p4.running":        command.Running,
-			"p4.cpu.user":       command.UCpu,
-			"p4.cpu.system":     command.SCpu,
-			"p4.disk.in_bytes":  command.DiskIn * 512,
-			"p4.disk.out_bytes": command.DiskOut * 512,
-			"p4.max_rss":        command.MaxRss,
-			"p4.page_faults":    command.PageFaults,
-			"p4.cmd_error":      command.CmdError,
+			"type":                bt.name,
+			"p4.process_key":      command.ProcessKey,
+			"p4.cmd":              command.Cmd,
+			"p4.pid":              command.Pid,
+			"p4.line_no":          command.LineNo,
+			"p4.user":             command.User,
+			"p4.workspace":        command.Workspace,
+			"p4.start_time":       command.StartTime,
+			"p4.end_time":         command.EndTime,
+			"p4.compute_sec":      command.ComputeLapse,
+			"p4.completed_sec":    command.CompletedLapse,
+			"p4.app":              command.App,
+			"p4.args":             command.Args,
+			"p4.running":          command.Running,
+			"p4.cpu.user":         command.UCpu,
+			"p4.cpu.system":       command.SCpu,
+			"p4.disk.read_bytes":  command.DiskIn * 512,
+			"p4.disk.write_bytes": command.DiskOut * 512,
+			"p4.max_rss":          command.MaxRss,
+			"p4.page_faults":      command.PageFaults,
+			"p4.cmd_error":        command.CmdError,
 		},
 	}
 
@@ -148,11 +201,17 @@ func (bt *P4dbeat) publishCommand(command p4dlog.Command) {
 	setIfNonZeroSec(&event, "rpc.rcv_sec", command.RPCRcv)
 
 	ips := strings.Split(command.IP, "/")
-	if len(ips) == 1 && ips[0] != "background" {
-		event.Fields["p4.ip"] = ips[0]
+	if len(ips) == 1 {
+		if ips[0] != "background" && ips[0] != "" {
+			event.Fields["p4.ip"] = ips[0]
+		}
 	} else if len(ips) > 1 {
-		event.Fields["p4.proxy_ip"] = ips[0]
-		event.Fields["p4.ip"] = ips[1]
+		if ips[0] != "" {
+			event.Fields["p4.proxy_ip"] = ips[0]
+		}
+		if ips[1] != "" {
+			event.Fields["p4.ip"] = ips[1]
+		}
 	}
 
 	for _, values := range command.Tables {
@@ -191,7 +250,7 @@ func (bt *P4dbeat) publishEvent(str string) {
 	var f interface{}
 	err := json.Unmarshal([]byte(str), &f)
 	if err != nil {
-		logp.Warn("Error %v to unmarshal %s", err, str)
+		bt.log.Warnf("Error %v to unmarshal %s", err, str)
 	}
 	m := f.(map[string]interface{})
 	event := beat.Event{
@@ -223,7 +282,9 @@ func (bt *P4dbeat) processEvents() {
 	}
 }
 
-func (bt *P4dbeat) tailFile(filename string, config tail.Config, done chan struct{}, stop chan struct{}) {
+func (bt *P4dbeat) tailFile(filename string, config tail.Config, done chan struct{}, stop chan struct{}, store *statestore.Store) {
+	ctx := context.Background()
+
 	defer func() {
 		done <- struct{}{}
 	}()
@@ -234,25 +295,34 @@ func (bt *P4dbeat) tailFile(filename string, config tail.Config, done chan struc
 		return
 	}
 
-	fp := p4dlog.NewP4dFileParser(logrus.New())
-	commands := fp.LogParser(context.Background(), bt.lines, nil)
+	fp := p4dlog.NewP4dFileParser(bt.log)
+	commands := fp.LogParser(ctx, bt.lines, nil)
 
+	bt.log.Infof("Log parser is now tailing '%s'", filename)
 	for {
 		select {
 		case <-stop:
-			logp.Debug("Stopping\n", "")
+			bt.log.Debug("Stopping\n", "")
 			close(bt.lines)
 			bt.processEvents()
 			t.Stop()
 			return
 		case line := <-t.Lines:
-			logp.Debug("Parsing line:\n%s", line.Text)
+			bt.log.Debugf("Parsing line:\n%s", line.Text)
 			bt.lines <- line.Text
+
 		case command := <-commands:
+			bt.log.Debugf("Publishing '%s' command", command.Cmd)
 			bt.publishCommand(command)
+			// update the offset for every parsed command
+			offset, err := t.Tell()
+			if err != nil {
+				bt.log.Errorf("Failed to get current log offset")
+			} else {
+				store.Set(offsetKeyName, common.MapStr{"offset": offset})
+			}
 		case json := <-bt.events:
 			bt.publishEvent(json)
-			// default:
 		}
 	}
 
@@ -264,5 +334,6 @@ func (bt *P4dbeat) tailFile(filename string, config tail.Config, done chan struc
 // Stop stops p4dbeat.
 func (bt *P4dbeat) Stop() {
 	bt.client.Close()
+	bt.registry.Close()
 	close(bt.done)
 }
